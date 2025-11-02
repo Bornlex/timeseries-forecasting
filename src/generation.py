@@ -59,7 +59,6 @@ def generate_from_series(
     temperature: float = 1.0,
     top_k: int = 0,
     top_p: float = 1.0,
-    device: str = "cpu"
 ) -> List[float]:
     """
     Generate new values from an initial `series`.
@@ -71,7 +70,6 @@ def generate_from_series(
 
     Returns the original series with `max_tokens` appended decoded values (as floats).
     """
-    model.to(device)
     model.eval()
 
     raw = list(series)
@@ -106,7 +104,7 @@ def generate_from_series(
     with torch.no_grad():
         for step in range(max_tokens):
             indices_np = np.array(current_token_ids, dtype=np.int64)
-            indices = torch.from_numpy(indices_np).view(1, -1).to(device)
+            indices = torch.from_numpy(indices_np).view(1, -1).to(model.device)
 
             if hasattr(model.config, "block_size"):
                 block_size = model.config.block_size
