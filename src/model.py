@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from torch import nn
+from typing import Callable
 
 from src.attention import MultiQueryAttention
 from src.ffn import FFN
@@ -58,38 +59,6 @@ class ForecastingModel(nn.Module):
         x = self.__fc(x)
 
         return x, kv_cache
-
-    def generate(self, sentence: str, max_tokens: int = 256, temperature: float = 1.0, use_kv_cache: bool = False) -> str:
-        encoder, decoder = utils.get_encoder_decoder()
-
-        encoded = encoder(sentence)
-        encoded = np.array(encoded)
-        indices = torch.from_numpy(encoded.astype(np.int64)).view(1, encoded.shape[0]).to(self.device)
-
-        if use_kv_cache:
-            kv_cache = [{'k': None, 'v': None} for _ in range(self.config.n_layer)]
-        else:
-            kv_cache = None
-
-        self.eval()
-        with torch.no_grad():
-            for index in range(max_tokens):
-                if index == 0 or not use_kv_cache:
-                    indices_cond = indices if indices.shape[1] <= self.config.block_size else indices[:, -self.config.block_size:]
-                    logits, kv_cache = self(indices_cond, kv_cache=kv_cache, start_pos=0)
-                else:
-                    indices_cond = indices[:, -1:].to(self.device)
-                    logits, kv_cache = self(indices_cond, kv_cache=kv_cache, start_pos=indices.shape[1] - 1)
-
-                logits = logits[:, -1, :] / temperature
-                probabilities = torch.nn.functional.softmax(logits, dim=-1)
-                next_index = torch.multinomial(probabilities, num_samples=1)
-                indices = torch.cat((indices, next_index), dim=1)
-
-        indices = indices.tolist()
-        result = decoder(indices[0])
-
-        return result
 
     def to(self, device, *args, **kwargs):
         self.device = device

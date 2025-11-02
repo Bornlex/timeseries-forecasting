@@ -67,7 +67,7 @@ class MultiQueryAttention(nn.Module):
         return x
 
     def create_causal_mask(self, x: torch.Tensor):
-        mask = torch.ones_like(x, dtype=torch.bool)
+        mask = torch.ones((x.shape[-2], x.shape[-1]), dtype=torch.bool).unsqueeze(0).unsqueeze(0).to(x.device)
         mask = torch.triu(mask, diagonal=1)
 
         return mask

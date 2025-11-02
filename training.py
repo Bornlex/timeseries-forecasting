@@ -1,14 +1,17 @@
 import argparse
 from dataclasses import dataclass
 import os
+import random
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 import wandb
 
 from src.config import ModelConfig
+from src.generation import generate_from_series
 from src.model import ForecastingModel
-from src.tokenizer import setup_data
+from src.tokenizer import setup_data, tokenized_window_from_series
+from src.visualisation.chart import plot_series
 
 
 @dataclass
@@ -34,17 +37,20 @@ def parse_args():
     parser.add_argument('--resume_path', type=str, default='checkpoint.pth', help='Path to save the checkpointed model.')
 
     # --- Model Hyperparameters ---
-    parser.add_argument('--n_layers', type=int, default=6, help='Number of transformer layers.')
-    parser.add_argument('--n_head', type=int, default=6, help='Number of attention heads.')
+    parser.add_argument('--n_layers', type=int, default=2, help='Number of transformer layers.')
+    parser.add_argument('--n_head', type=int, default=2, help='Number of attention heads.')
     parser.add_argument('--n_embd', type=int, default=384, help='Embedding dimension (default: n_head * 64).')
     parser.add_argument('--vocab_size', type=int, default=1024, help='Vocabulary size.')
     parser.add_argument('--dropout', type=float, default=0.2, help='Dropout rate.')
+    parser.add_argument('--low_limit', type=float, default=-15.0, help='Low limit for scaling.')
+    parser.add_argument('--high_limit', type=float, default=15.0, help='High limit for scaling.')
 
     # --- Data & Training ---
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size.')
     parser.add_argument('--block_size', type=int, default=256, help='Context window size.')
     parser.add_argument('--dataset', type=str, default='shakespeare', help='Name of the dataset to use.')
     parser.add_argument('--max_iters', type=int, default=5000, help='Total training iterations.')
+    parser.add_argument('--num_series', type=int, default=2000, help='Number of series to train on.')
 
     # --- Optimizer & Scheduler ---
     parser.add_argument('--learning_rate', type=float, default=1e-3, help='Initial learning rate.')
@@ -74,7 +80,12 @@ def train(
         training_config: TrainingConfig,
         batch_size: int,
         block_size: int,
-        checkpoint_path: str = None
+        low_limit: float = -15.0,
+        high_limit: float = 15.0,
+        num_bins: int = 1023,
+        pad_token_id: int = 1023,
+        checkpoint_path: str = None,
+        validation_series_list: list = None
 ):
     device = 'mps' if torch.mps.is_available() else 'cpu'
 
@@ -117,6 +128,30 @@ def train(
             if checkpoint_path is not None:
                 forecasting_model.save_weights(checkpoint_path)
 
+        if iteration % 100 == 0 and validation_series_list:
+            forecasting_model.eval()
+
+            with torch.no_grad():
+                x_eval, y_eval = next(iter(dataset))
+                x_eval = x_eval.to(device)
+
+                generation = generate_from_series(
+                    series=random.choice(validation_series_list),
+                    model=forecasting_model,
+                    context_length=block_size,
+                    low_limit=low_limit,
+                    high_limit=high_limit,
+                    num_bins=num_bins,
+                    pad_token_id=pad_token_id,
+                )
+
+                plot_series(
+                    y_init=x_eval[0].cpu().numpy(),
+                    y_forecast=generation,
+                )
+
+            forecasting_model.train()
+
     return forecasting_model
 
 
@@ -157,8 +192,8 @@ if __name__ == '__main__':
         },
     )
 
-    train_loader = setup_data(
-        num_series=100,
+    train_loader, validation_list = setup_data(
+        num_series=arguments.num_series,
         context_length=arguments.block_size,
         horizon=1,
         num_bins=arguments.vocab_size - 1,
@@ -171,7 +206,12 @@ if __name__ == '__main__':
         conf,
         arguments.batch_size,
         arguments.block_size,
-        arguments.resume_path
+        checkpoint_path=arguments.resume_path,
+        low_limit=arguments.low_limit,
+        high_limit=arguments.high_limit,
+        num_bins=arguments.vocab_size - 1,
+        pad_token_id=arguments.vocab_size - 1,
+        validation_series_list=validation_list
     )
 
     if arguments.save:

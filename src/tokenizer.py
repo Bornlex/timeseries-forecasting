@@ -1,31 +1,8 @@
-from dataclasses import dataclass
 from datasets import load_dataset
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
-from typing import Any, Dict, Literal, Optional, Tuple
-
-
-@dataclass
-class TokenizerConfig:
-    tokenizer_kwargs: Dict[str, Any]
-    context_length: int
-    prediction_length: int
-    n_tokens: int
-    n_special_tokens: int
-    pad_token_id: int
-    eos_token_id: int
-    use_eos_token: bool
-    model_type: Literal["causal", "seq2seq"]
-    num_samples: int
-    temperature: float
-    top_k: int
-    top_p: float
-
-    def __post_init__(self):
-        assert self.pad_token_id < self.n_special_tokens and self.eos_token_id < self.n_special_tokens, (
-            f"Special token id's must be smaller than {self.n_special_tokens=}"
-        )
+from typing import List, Optional, Tuple
 
 
 def scale_and_quantize(
@@ -119,50 +96,103 @@ class ChronosDataset(Dataset):
         series_idx, start_idx = self.window_pointers[idx]
         series = self.data_list[series_idx]['target'][0]
 
-        window_end = start_idx + self.context_length + 1
-        full_window_np = np.array(series[start_idx : window_end]).astype(np.float32)
-
-        scale_context_np = full_window_np[:-1]
-
-        epsilon = 1e-8
-        scale = np.nanmean(np.abs(scale_context_np)) + epsilon
-
-        if np.isnan(scale):
-            scale = 1.0 + epsilon
-
-        all_tokens, _ = scale_and_quantize(
-            full_window_np,
+        x_tokens, y_tokens, _ = tokenized_window_from_series(
+            series,
+            start_idx,
+            self.context_length,
             self.low_limit,
             self.high_limit,
             self.num_bins,
-            self.pad_token_id,
-            scale=scale
+            self.pad_token_id
         )
 
-        x_tensor = torch.from_numpy(all_tokens[:-1]).long()
-        y_tensor = torch.from_numpy(all_tokens[1:]).long()
+        x_tensor = torch.from_numpy(x_tokens).long()
+        y_tensor = torch.from_numpy(y_tokens).long()
 
         return x_tensor, y_tensor
+
+
+def make_window_pointers(data_list: list, context_length: int) -> List[Tuple[int, int]]:
+    """
+    Build sliding-window pointers for a dataset of time series.
+
+    Each returned tuple is (series_index, start_index) where `start_index` is the
+    beginning of a window that contains `context_length` context steps plus one
+    target step (window length = context_length + 1). For a series of length L,
+    valid start indices are 0..(L - context_length - 1).
+
+    Args:
+        data_list (list): List of items where each item contains a time series at
+            `item['target'][0]`.
+        context_length (int): Number of context steps in each window.
+
+    Returns:
+        List[Tuple[int, int]]: List of (series_index, start_index) pointers.
+    """
+    pointers = []
+
+    for series_idx, item in enumerate(data_list):
+        series_len = len(item['target'][0])
+
+        for i in range(series_len - context_length):
+            pointers.append((series_idx, i))
+
+    return pointers
+
+
+def tokenized_window_from_series(
+        series: List[float],
+        start_idx: int,
+        context_length: int,
+        low_limit: float,
+        high_limit: float,
+        num_bins: int,
+        pad_token_id: int
+) -> Tuple[np.ndarray, np.ndarray, float]:
+    """
+    Return (x_tokens, y_tokens, scale) as numpy arrays for the window starting at start_idx.
+    """
+    window_end = start_idx + context_length + 1
+    full_window_np = np.array(series[start_idx : window_end]).astype(np.float32)
+
+    scale_context_np = full_window_np[:-1]
+
+    epsilon = 1e-8
+    scale = np.nanmean(np.abs(scale_context_np)) + epsilon
+
+    if np.isnan(scale):
+        scale = 1.0 + epsilon
+
+    all_tokens, used_scale = scale_and_quantize(
+        full_window_np,
+        low_limit,
+        high_limit,
+        num_bins,
+        pad_token_id,
+        scale=scale
+    )
+
+    x_tokens = all_tokens[:-1]
+    y_tokens = all_tokens[1:]
+
+    return x_tokens, y_tokens, used_scale
 
 
 def setup_data(num_series: int, context_length: int, horizon: int, num_bins: int, batch_size: int):
     raw_dataset = load_dataset(
         "theforecastingcompany/GiftEvalPretrain",
-        "BEIJING_SUBWAY_30MIN",
         split="train",
         streaming=True
     )
+
     data_list = list(raw_dataset.take(num_series))
+    validation_list = list(raw_dataset.skip(num_series).take(100))
+    validation_list = [item['target'][0] for item in validation_list]
 
     low_limit, high_limit = -15.0, 15.0
     pad_token_id = num_bins
 
-    window_pointers = []
-    for series_idx, item in enumerate(data_list):
-        series_len = len(item['target'][0])
-
-        for i in range(series_len - context_length):
-            window_pointers.append((series_idx, i))
+    window_pointers = make_window_pointers(data_list, context_length)
 
     dataset = ChronosDataset(
         data_list,
@@ -177,4 +207,4 @@ def setup_data(num_series: int, context_length: int, horizon: int, num_bins: int
 
     train_loader = DataLoader(dataset, batch_size=batch_size)
 
-    return train_loader
+    return train_loader, validation_list
