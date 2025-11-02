@@ -132,13 +132,13 @@ def train(
             forecasting_model.eval()
 
             with torch.no_grad():
-                x_eval, y_eval = next(iter(dataset))
-                x_eval = x_eval.to(device)
+                max_tokens = 256
 
                 generation = generate_from_series(
                     series=random.choice(validation_series_list),
                     model=forecasting_model,
                     context_length=block_size,
+                    max_tokens=max_tokens,
                     low_limit=low_limit,
                     high_limit=high_limit,
                     num_bins=num_bins,
@@ -146,8 +146,8 @@ def train(
                 )
 
                 plot_series(
-                    y_init=x_eval[0].cpu().numpy(),
-                    y_forecast=generation,
+                    y_init=generation[:-max_tokens],
+                    y_forecast=generation[-max_tokens:],
                 )
 
             forecasting_model.train()

@@ -90,6 +90,7 @@ def generate_from_series(
             pad_token_id,
             scale=None
         )
+
         return token_ids, used_scale
 
     if mode == "fixed_scale":
@@ -118,9 +119,7 @@ def generate_from_series(
 
             logits, _ = model(indices_cond)
             logits = logits[:, -1, :].squeeze(0)
-
-            if temperature != 1.0:
-                logits = logits / float(temperature)
+            logits = logits / float(temperature)
 
             logits = top_k_top_p_filter(logits, top_k=top_k, top_p=top_p)
 
