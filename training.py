@@ -106,7 +106,7 @@ def train(
         T_max=lr_decay_iters,
         eta_min=min_lr
     )
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.CrossEntropyLoss(label_smoothing=0.1)
 
     forecasting_model.to(device)
     forecasting_model.train()

@@ -60,12 +60,12 @@ if __name__ == '__main__':
     generation = generate_from_series(
         series=series,
         model=model,
-        context_length=30,
-        low_limit=-1000,
+        context_length=256,
+        low_limit=-100,
         high_limit=1000,
-        num_bins=1024,
-        pad_token_id=1024,
-        max_tokens=50,
+        num_bins=args.vocab_size - 1,
+        pad_token_id=args.vocab_size - 1,
+        max_tokens=256,
         temperature=0.8,
         top_k=50,
         top_p=0.9,
@@ -73,7 +73,7 @@ if __name__ == '__main__':
     )
 
     plot_series(
-        y_init=generation[-512:-256],
+        y_init=generation[-1024:-256],
         y_forecast=generation[-256:],
         show_figure=True
     )

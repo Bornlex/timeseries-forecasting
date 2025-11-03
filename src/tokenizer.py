@@ -159,12 +159,28 @@ def setup_data(
         high_limit: float = 1000,
         seed: int = 42
 ):
+    def is_valid_series(item, min_val=None, max_val=None):
+        series = np.array(item['target'][0])
+
+        if np.any(np.isnan(series)):
+            return False
+
+        if min_val is not None and np.any(series < min_val):
+            return False
+
+        if max_val is not None and np.any(series > max_val):
+            return False
+
+        return True
+
     raw_dataset = load_dataset(
         "json",
         data_files=dataset_path,
         split="train",
         streaming=True,
-    ).shuffle(seed=seed)
+    ).shuffle(seed=seed).filter(
+        lambda x: is_valid_series(x, min_val=low_limit, max_val=high_limit)
+    )
 
     data_list = list(raw_dataset.take(num_series))
     validation_list = list(raw_dataset.shuffle(seed=seed + 1).take(100))
