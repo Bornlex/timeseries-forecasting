@@ -117,6 +117,8 @@ def generate_from_series(
             logits = logits[:, -1, :].squeeze(0)
             logits = logits / float(temperature)
 
+            logits[pad_token_id] = float('-inf')
+
             logits_mean = logits.mean().item()
             logits_std = logits.std().item()
             logits_max = logits.max().item()

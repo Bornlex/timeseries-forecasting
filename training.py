@@ -150,7 +150,7 @@ def train(
                     high_limit=high_limit,
                     num_bins=num_bins,
                     pad_token_id=pad_token_id,
-                    log_file=f'logs/forecast_iter_{iteration}.json'
+                    log_file=f'logs/logs_{iteration}.json'
                 )
 
                 plot_series(
