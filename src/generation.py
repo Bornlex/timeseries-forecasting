@@ -161,9 +161,25 @@ def generate_from_series(
                 current_token_ids = current_token_ids[-context_length:]
 
     if log_file:
+        def convert_to_native(obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, list):
+                return [convert_to_native(item) for item in obj]
+            elif isinstance(obj, dict):
+                return {key: convert_to_native(value) for key, value in obj.items()}
+            else:
+                return obj
+
+        token_log_native = convert_to_native(token_log)
+
         with open(log_file, 'w') as f:
             json.dump({
-                'generation_log': token_log,
+                'generation_log': token_log_native,
                 'summary': {
                     'total_steps': len(token_log),
                     'unique_tokens': len(set(entry['token'] for entry in token_log)),
