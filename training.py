@@ -185,6 +185,8 @@ if __name__ == '__main__':
     )
     model = ForecastingModel(model_config)
 
+    print(f'Model has {sum(p.numel() for p in model.parameters())} parameters.')
+
     if arguments.resume and os.path.isfile(arguments.resume_path):
         model.load_state_dict(torch.load(arguments.resume_path))
 
