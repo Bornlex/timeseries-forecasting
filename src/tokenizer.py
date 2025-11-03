@@ -159,16 +159,16 @@ def setup_data(
         high_limit: float = 1000,
         seed: int = 42
 ):
-    def is_valid_series(item, min_val=None, max_val=None):
+    def is_valid_series(item, min_val, max_val):
         series = np.array(item['target'][0])
 
         if np.any(np.isnan(series)):
             return False
 
-        if min_val is not None and np.any(series < min_val):
+        if np.any(series < min_val):
             return False
 
-        if max_val is not None and np.any(series > max_val):
+        if np.any(series > max_val):
             return False
 
         return True

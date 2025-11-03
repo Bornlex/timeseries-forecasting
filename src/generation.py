@@ -119,17 +119,17 @@ def generate_from_series(
 
             logits[pad_token_id] = float('-inf')
 
+            token_max = int(num_bins * 0.9)
+            logits[token_max:] = float('-inf')
+
             logits_mean = logits.mean().item()
             logits_std = logits.std().item()
             logits_max = logits.max().item()
             logits_min = logits.min().item()
 
             logits = top_k_top_p_filter(logits, top_k=top_k, top_p=top_p)
-
             probs = torch.nn.functional.softmax(logits, dim=-1)
-
             top5_probs, top5_tokens = torch.topk(probs, k=min(5, len(probs)))
-
             next_token = torch.multinomial(probs, num_samples=1).item()
 
             current_token_ids = np.concatenate([current_token_ids, np.array([next_token], dtype=np.int64)])
