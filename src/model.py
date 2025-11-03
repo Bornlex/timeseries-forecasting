@@ -43,6 +43,7 @@ class ForecastingModel(nn.Module):
             for _ in range(config.n_layer)
         ])
         self.__fc = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.__temperature = nn.Parameter(torch.ones(1))
 
     def forward(self, x, kv_cache: list | None = None, start_pos: int = 0):
         x = self.__embedding(x)
@@ -57,6 +58,7 @@ class ForecastingModel(nn.Module):
                 kv_cache[i] = current_kv_cache
 
         x = self.__fc(x)
+        x = x / self.__temperature.clamp(min=0.1)
 
         return x, kv_cache
 
