@@ -4,6 +4,51 @@ import seaborn as sns
 from typing import Optional, Sequence, Tuple
 
 
+def simple_plot_series(y: Sequence[float]) -> None:
+    sns.set_theme(style="whitegrid")
+
+    y = np.asarray(y)
+    x = np.arange(len(y))
+
+    plt.figure()
+    plt.plot(x, y, label="series", color='blue', linewidth=2)
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+
+
+def simple_subplot(series_list: Sequence[Sequence[float]], labels: Sequence[str]) -> None:
+    sns.set_theme(style="whitegrid")
+
+    num_series = len(series_list)
+    if num_series == 0:
+        return
+
+    ncols = int(np.ceil(np.sqrt(num_series)))
+    nrows = int(np.ceil(num_series / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 4 * nrows))
+
+    if isinstance(axes, np.ndarray):
+        axes_flat = axes.flatten()
+    else:
+        axes_flat = [axes]
+
+    for i, (y, label) in enumerate(zip(series_list, labels)):
+        ax = axes_flat[i]
+        y = np.asarray(y)
+        x = np.arange(len(y))
+
+        ax.plot(x, y, label=label, color='blue', linewidth=2)
+        ax.grid(True)
+        ax.legend()
+
+    for ax in axes_flat[num_series:]:
+        ax.set_visible(False)
+
+    plt.tight_layout()
+    plt.show()
+
+
 def plot_series(
     y_init: Sequence[float],
     y_forecast: Sequence[float],

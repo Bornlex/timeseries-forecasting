@@ -10,7 +10,7 @@ import wandb
 from src.config import ModelConfig
 from src.generation import generate_from_series
 from src.model import ForecastingModel
-from src.tokenizer import setup_data, tokenized_window_from_series
+from src.tokenizer import setup_data
 from src.visualisation.chart import plot_series
 
 
@@ -35,6 +35,7 @@ def parse_args():
     parser.add_argument('--resume', action='store_true', help='Whether to resume training from checkpoint.')
     parser.add_argument('--save_path', type=str, default='model.pth', help='Path to save the trained model.')
     parser.add_argument('--resume_path', type=str, default='checkpoint.pth', help='Path to save the checkpointed model.')
+    parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility.')
 
     # --- Model Hyperparameters ---
     parser.add_argument('--n_layers', type=int, default=2, help='Number of transformer layers.')
@@ -135,7 +136,7 @@ def train(
                 max_tokens = 256
 
                 generation = generate_from_series(
-                    series=random.choice(validation_series_list),
+                    series=random.choice(validation_series_list)[-1000:],
                     model=forecasting_model,
                     context_length=block_size,
                     max_tokens=max_tokens,
@@ -197,7 +198,8 @@ if __name__ == '__main__':
         context_length=arguments.block_size,
         horizon=1,
         num_bins=arguments.vocab_size - 1,
-        batch_size=arguments.batch_size
+        batch_size=arguments.batch_size,
+        seed=arguments.seed
     )
 
     model = train(

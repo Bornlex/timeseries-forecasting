@@ -1,4 +1,4 @@
-from datasets import load_dataset
+from datasets import load_dataset, get_dataset_config_names
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -178,15 +178,16 @@ def tokenized_window_from_series(
     return x_tokens, y_tokens, used_scale
 
 
-def setup_data(num_series: int, context_length: int, horizon: int, num_bins: int, batch_size: int):
+def setup_data(num_series: int, context_length: int, horizon: int, num_bins: int, batch_size: int, seed: int = 42):
     raw_dataset = load_dataset(
-        "theforecastingcompany/GiftEvalPretrain",
+        "json",
+        data_files='dataset.jsonl',
         split="train",
         streaming=True
-    )
+    ).shuffle(seed=seed)
 
     data_list = list(raw_dataset.take(num_series))
-    validation_list = list(raw_dataset.skip(num_series).take(100))
+    validation_list = list(raw_dataset.shuffle(seed=seed + 1).take(100))
     validation_list = [item['target'][0] for item in validation_list]
 
     low_limit, high_limit = -15.0, 15.0
