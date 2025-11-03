@@ -78,9 +78,14 @@ def parse_args():
 def train(
         forecasting_model: nn.Module,
         dataset: DataLoader,
-        training_config: TrainingConfig,
-        batch_size: int,
         block_size: int,
+        learning_rate: float = 1e-3,
+        beta1: float = 0.9,
+        beta2: float = 0.99,
+        weight_decay: float = 1e-1,
+        lr_decay_iters: int = 500,
+        min_lr: float = 2e-5,
+        max_iters: int = 10000,
         low_limit: float = -15.0,
         high_limit: float = 15.0,
         num_bins: int = 1023,
@@ -92,21 +97,21 @@ def train(
 
     optimizer = torch.optim.AdamW(
         forecasting_model.parameters(),
-        lr=training_config.lr,
-        betas=(training_config.beta1, training_config.beta2),
-        weight_decay=training_config.weight_decay
+        lr=learning_rate,
+        betas=(beta1, beta2),
+        weight_decay=weight_decay
     )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer,
-        T_max=training_config.lr_decay_iters,
-        eta_min=training_config.min_lr
+        T_max=lr_decay_iters,
+        eta_min=min_lr
     )
     loss_fn = nn.CrossEntropyLoss()
 
     forecasting_model.to(device)
     forecasting_model.train()
 
-    for iteration in range(training_config.max_iters):
+    for iteration in range(max_iters):
         x, y = next(iter(dataset))
         x = x.to(device)
         y = y.to(device, dtype=torch.long)
@@ -125,7 +130,7 @@ def train(
             wandb.log({"train/loss": loss.item(), "iteration": iteration, "lr": optimizer.param_groups[0]['lr']})
 
         if iteration % 10 == 0:
-            print(f'[{iteration}|{training_config.max_iters}] loss : {loss.item():.4f}')
+            print(f'[{iteration}|{max_iters}] loss : {loss.item():.4f}')
 
             if checkpoint_path is not None:
                 forecasting_model.save_weights(checkpoint_path)
@@ -162,18 +167,6 @@ def train(
 if __name__ == '__main__':
     arguments = parse_args()
 
-    conf = TrainingConfig(
-        lr=arguments.learning_rate,
-        lr_decay_iters=arguments.lr_decay_iters,
-        min_lr=arguments.min_lr,
-        max_iters=arguments.max_iters,
-        beta1=arguments.beta1,
-        beta2=arguments.beta2,
-        eval_interval=arguments.eval_interval,
-        eval_iters=arguments.eval_iters,
-        log_interval=arguments.log_interval,
-        weight_decay=arguments.weight_decay
-    )
     model_config = ModelConfig(
         block_size=arguments.block_size,
         n_layer=arguments.n_layers,
@@ -194,7 +187,13 @@ if __name__ == '__main__':
         project=arguments.wandb_project,
         name=f'l{arguments.n_layers}-h{arguments.n_head}-d{arguments.n_embd}',
         config={
-            "learning_rate": conf.lr,
+            "learning_rate": arguments.learning_rate,
+            "beta1": arguments.beta1,
+            "beta2": arguments.beta2,
+            "weight_decay": arguments.weight_decay,
+            "lr_decay_iters": arguments.lr_decay_iters,
+            "min_lr": arguments.min_lr,
+            "max_iters": arguments.max_iters,
             "vocab_size": arguments.vocab_size,
             "batch_size": arguments.batch_size,
             "block_size": arguments.block_size,
@@ -222,9 +221,14 @@ if __name__ == '__main__':
     model = train(
         model,
         train_loader,
-        conf,
-        arguments.batch_size,
         arguments.block_size,
+        learning_rate=arguments.learning_rate,
+        beta1=arguments.beta1,
+        beta2=arguments.beta2,
+        weight_decay=arguments.weight_decay,
+        lr_decay_iters=arguments.lr_decay_iters,
+        min_lr=arguments.min_lr,
+        max_iters=arguments.max_iters,
         checkpoint_path=arguments.resume_path,
         low_limit=arguments.low_limit,
         high_limit=arguments.high_limit,

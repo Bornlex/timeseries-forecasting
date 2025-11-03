@@ -10,7 +10,6 @@ def tokens_to_values(
     low_limit: float,
     high_limit: float,
     num_bins: int,
-    pad_token_id: int,
     scale: float
 ) -> np.ndarray:
     bin_width = (high_limit - low_limit) / float(num_bins)
@@ -133,7 +132,6 @@ def generate_from_series(
                 low_limit,
                 high_limit,
                 num_bins,
-                pad_token_id,
                 current_scale
             )[0])
 

@@ -163,7 +163,7 @@ def setup_data(
         "json",
         data_files=dataset_path,
         split="train",
-        streaming=True
+        streaming=True,
     ).shuffle(seed=seed)
 
     data_list = list(raw_dataset.take(num_series))
