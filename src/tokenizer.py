@@ -1,71 +1,8 @@
-from datasets import load_dataset, get_dataset_config_names
+from datasets import load_dataset
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 from typing import List, Optional, Tuple
-
-
-def scale_and_quantize(
-        time_series: np.ndarray,
-        low_limit: float,
-        high_limit: float,
-        num_bins: int,
-        pad_token_id: int,
-        scale: Optional[float] = None
-) -> Tuple[np.ndarray, float]:
-    epsilon = 1e-8
-
-    nan_mask = np.isnan(time_series)
-
-    if scale is None:
-        scale = np.nanmean(np.abs(time_series)) + epsilon
-        if np.isnan(scale):
-            scale = 1.0 + epsilon
-
-    scaled_series = time_series / scale
-    scaled_series_filled = np.nan_to_num(scaled_series, nan=0.0)
-
-    if low_limit >= high_limit:
-        high_limit = low_limit + epsilon
-
-    bin_width = (high_limit - low_limit) / num_bins
-
-    clipped_series = np.clip(scaled_series_filled, low_limit, high_limit)
-    token_ids = np.floor((clipped_series - low_limit) / bin_width).astype(np.int64)
-    token_ids = np.clip(token_ids, 0, num_bins - 1)
-
-    token_ids[nan_mask] = pad_token_id
-
-    return token_ids, scale
-
-
-def find_scaling_limits(data_list: list, context_length: int, horizon: int = 1):
-    global_min = np.inf
-    global_max = -np.inf
-    epsilon = 1e-8
-
-    for item in data_list:
-        series = np.array(item['target'][0]).astype(np.float32)
-
-        if len(series) < context_length + horizon:
-            continue
-
-        for i in range(len(series) - context_length - horizon + 1):
-            x = series[i : i + context_length]
-            y = series[i + context_length + horizon - 1]
-
-            scale = np.mean(np.abs(x)) + epsilon
-
-            x_scaled = x / scale
-            y_scaled = y / scale
-
-            current_min = min(np.min(x_scaled), y_scaled)
-            current_max = max(np.max(x_scaled), y_scaled)
-
-            if current_min < global_min: global_min = current_min
-            if current_max > global_max: global_max = current_max
-
-    return global_min, global_max
 
 
 class ChronosDataset(Dataset):
@@ -112,23 +49,56 @@ class ChronosDataset(Dataset):
         return x_tensor, y_tensor
 
 
+def scale_and_quantize(
+        time_series: np.ndarray,
+        low_limit: float,
+        high_limit: float,
+        num_bins: int,
+        pad_token_id: int,
+        scale: Optional[float] = None
+) -> Tuple[np.ndarray, float]:
+    epsilon = 1e-8
+
+    nan_mask = np.isnan(time_series)
+
+    if scale is None:
+        scale = np.nanmean(np.abs(time_series)) + epsilon
+        if np.isnan(scale):
+            scale = 1.0 + epsilon
+
+    scaled_series = time_series / scale
+    scaled_series_filled = np.nan_to_num(scaled_series, nan=0.0)
+
+    if low_limit >= high_limit:
+        high_limit = low_limit + epsilon
+
+    bin_width = (high_limit - low_limit) / num_bins
+
+    clipped_series = np.clip(scaled_series_filled, low_limit, high_limit)
+    token_ids = np.floor((clipped_series - low_limit) / bin_width).astype(np.int64)
+    token_ids = np.clip(token_ids, 0, num_bins - 1)
+
+    token_ids[nan_mask] = pad_token_id
+
+    return token_ids, scale
+
+
+def find_scaling_limits(scaled_series: np.ndarray, num_bins: int) -> Tuple[float, float]:
+    finite_values = scaled_series[np.isfinite(scaled_series)]
+
+    if finite_values.size == 0:
+        return -1.0, 1.0
+
+    low_limit = np.percentile(finite_values, 1)
+    high_limit = np.percentile(finite_values, 99)
+
+    if low_limit >= high_limit:
+        high_limit = low_limit + 1.0
+
+    return low_limit, high_limit
+
+
 def make_window_pointers(data_list: list, context_length: int) -> List[Tuple[int, int]]:
-    """
-    Build sliding-window pointers for a dataset of time series.
-
-    Each returned tuple is (series_index, start_index) where `start_index` is the
-    beginning of a window that contains `context_length` context steps plus one
-    target step (window length = context_length + 1). For a series of length L,
-    valid start indices are 0..(L - context_length - 1).
-
-    Args:
-        data_list (list): List of items where each item contains a time series at
-            `item['target'][0]`.
-        context_length (int): Number of context steps in each window.
-
-    Returns:
-        List[Tuple[int, int]]: List of (series_index, start_index) pointers.
-    """
     pointers = []
 
     for series_idx, item in enumerate(data_list):
@@ -178,10 +148,20 @@ def tokenized_window_from_series(
     return x_tokens, y_tokens, used_scale
 
 
-def setup_data(num_series: int, context_length: int, horizon: int, num_bins: int, batch_size: int, seed: int = 42):
+def setup_data(
+        dataset_path: str,
+        num_series: int,
+        context_length: int,
+        horizon: int,
+        num_bins: int,
+        batch_size: int,
+        low_limit: float = -1000,
+        high_limit: float = 1000,
+        seed: int = 42
+):
     raw_dataset = load_dataset(
         "json",
-        data_files='dataset.jsonl',
+        data_files=dataset_path,
         split="train",
         streaming=True
     ).shuffle(seed=seed)
@@ -190,7 +170,6 @@ def setup_data(num_series: int, context_length: int, horizon: int, num_bins: int
     validation_list = list(raw_dataset.shuffle(seed=seed + 1).take(100))
     validation_list = [item['target'][0] for item in validation_list]
 
-    low_limit, high_limit = -15.0, 15.0
     pad_token_id = num_bins
 
     window_pointers = make_window_pointers(data_list, context_length)
@@ -209,3 +188,20 @@ def setup_data(num_series: int, context_length: int, horizon: int, num_bins: int
     train_loader = DataLoader(dataset, batch_size=batch_size)
 
     return train_loader, validation_list
+
+
+if __name__ == '__main__':
+    train_loader, validation_list = setup_data(
+        'dataset.jsonl',
+        num_series=100,
+        context_length=30,
+        horizon=1,
+        num_bins=255,
+        batch_size=32,
+        seed=42
+    )
+
+    for x_batch, y_batch in train_loader:
+        print("X batch shape:", x_batch.shape)
+        print("Y batch shape:", y_batch.shape)
+        break

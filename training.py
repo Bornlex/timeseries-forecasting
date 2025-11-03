@@ -43,13 +43,13 @@ def parse_args():
     parser.add_argument('--n_embd', type=int, default=384, help='Embedding dimension (default: n_head * 64).')
     parser.add_argument('--vocab_size', type=int, default=1024, help='Vocabulary size.')
     parser.add_argument('--dropout', type=float, default=0.2, help='Dropout rate.')
-    parser.add_argument('--low_limit', type=float, default=-15.0, help='Low limit for scaling.')
-    parser.add_argument('--high_limit', type=float, default=15.0, help='High limit for scaling.')
+    parser.add_argument('--low_limit', type=float, default=-1000, help='Low limit for scaling.')
+    parser.add_argument('--high_limit', type=float, default=1000, help='High limit for scaling.')
 
     # --- Data & Training ---
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size.')
     parser.add_argument('--block_size', type=int, default=256, help='Context window size.')
-    parser.add_argument('--dataset', type=str, default='shakespeare', help='Name of the dataset to use.')
+    parser.add_argument('--dataset', type=str, default='dataset.jsonl', help='Name of the dataset to use.')
     parser.add_argument('--max_iters', type=int, default=5000, help='Total training iterations.')
     parser.add_argument('--num_series', type=int, default=2000, help='Number of series to train on.')
 
@@ -121,7 +121,8 @@ def train(
         optimizer.step()
         scheduler.step()
 
-        wandb.log({"train/loss": loss.item(), "iteration": iteration, "lr": optimizer.param_groups[0]['lr']})
+        if iteration >= 100:
+            wandb.log({"train/loss": loss.item(), "iteration": iteration, "lr": optimizer.param_groups[0]['lr']})
 
         if iteration % 10 == 0:
             print(f'[{iteration}|{training_config.max_iters}] loss : {loss.item():.4f}')
@@ -149,6 +150,8 @@ def train(
                 plot_series(
                     y_init=generation[:-max_tokens],
                     y_forecast=generation[-max_tokens:],
+                    filename=f'img/forecast_iter_{iteration}.png',
+                    show_figure=False
                 )
 
             forecasting_model.train()
@@ -190,15 +193,27 @@ if __name__ == '__main__':
         name=f'l{arguments.n_layers}-h{arguments.n_head}-d{arguments.n_embd}',
         config={
             "learning_rate": conf.lr,
+            "vocab_size": arguments.vocab_size,
+            "batch_size": arguments.batch_size,
+            "block_size": arguments.block_size,
+            "dataset": arguments.dataset,
+            "n_layers": arguments.n_layers,
+            "n_head": arguments.n_head,
+            "n_embd": arguments.n_embd,
+            "low_limit": arguments.low_limit,
+            "high_limit": arguments.high_limit,
         },
     )
 
     train_loader, validation_list = setup_data(
+        arguments.dataset,
         num_series=arguments.num_series,
         context_length=arguments.block_size,
         horizon=1,
         num_bins=arguments.vocab_size - 1,
         batch_size=arguments.batch_size,
+        low_limit=arguments.low_limit,
+        high_limit=arguments.high_limit,
         seed=arguments.seed
     )
 

@@ -50,12 +50,13 @@ def simple_subplot(series_list: Sequence[Sequence[float]], labels: Sequence[str]
 
 
 def plot_series(
-    y_init: Sequence[float],
-    y_forecast: Sequence[float],
-    filename: Optional[str] = None,
-    x_init: Optional[Sequence[float]] = None,
-    x_forecast: Optional[Sequence[float]] = None,
-    forecast_start: Optional[int] = None,
+        y_init: Sequence[float],
+        y_forecast: Sequence[float],
+        filename: Optional[str] = None,
+        x_init: Optional[Sequence[float]] = None,
+        x_forecast: Optional[Sequence[float]] = None,
+        forecast_start: Optional[int] = None,
+        show_figure: bool = True
 ) -> Tuple[plt.Figure, plt.Axes]:
     sns.set_theme(style="whitegrid")
 
@@ -85,6 +86,7 @@ def plot_series(
     if filename:
         fig.savefig(filename, bbox_inches="tight")
 
-    plt.show()
+    if show_figure:
+        plt.show()
 
     return fig, ax
