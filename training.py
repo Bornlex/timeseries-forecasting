@@ -10,22 +10,8 @@ import wandb
 from src.config import ModelConfig
 from src.generation import generate_from_series
 from src.model import ForecastingModel
-from src.tokenizer import setup_data
+from src.tokenizer import setup_data, Tokenizer
 from src.visualisation.chart import plot_series
-
-
-@dataclass
-class TrainingConfig:
-    lr: float
-    lr_decay_iters: int
-    min_lr: float
-    max_iters: int
-    beta1: float
-    beta2: float
-    eval_interval: int
-    eval_iters: int
-    log_interval: int
-    weight_decay: float
 
 
 def parse_args():
@@ -40,6 +26,7 @@ def parse_args():
     # --- Model Hyperparameters ---
     parser.add_argument('--n_layers', type=int, default=2, help='Number of transformer layers.')
     parser.add_argument('--n_head', type=int, default=2, help='Number of attention heads.')
+    parser.add_argument('--n_ffn', type=int, default=1024, help='Size of the FFN dimension.')
     parser.add_argument('--n_embd', type=int, default=384, help='Embedding dimension (default: n_head * 64).')
     parser.add_argument('--vocab_size', type=int, default=1024, help='Vocabulary size.')
     parser.add_argument('--dropout', type=float, default=0.2, help='Dropout rate.')
@@ -78,6 +65,7 @@ def parse_args():
 def train(
         forecasting_model: nn.Module,
         dataset: DataLoader,
+        tokenizer: Tokenizer,
         block_size: int,
         learning_rate: float = 1e-3,
         beta1: float = 0.9,
@@ -106,7 +94,7 @@ def train(
         T_max=lr_decay_iters,
         eta_min=min_lr
     )
-    loss_fn = nn.CrossEntropyLoss(label_smoothing=0.1)
+    loss_fn = nn.CrossEntropyLoss(label_smoothing=0.05)
 
     forecasting_model.to(device)
     forecasting_model.train()
@@ -144,12 +132,8 @@ def train(
                 generation = generate_from_series(
                     series=random.choice(validation_series_list)[-1000:],
                     model=forecasting_model,
-                    context_length=block_size,
                     max_tokens=max_tokens,
-                    low_limit=low_limit,
-                    high_limit=high_limit,
-                    num_bins=num_bins,
-                    pad_token_id=pad_token_id,
+                    tokenizer=tokenizer,
                     log_file=f'logs/logs_{iteration}.json'
                 )
 
@@ -175,7 +159,7 @@ if __name__ == '__main__':
         n_embd=arguments.n_embd,
         vocab_size=arguments.vocab_size,
         dropout=arguments.dropout,
-        ffn_hidden_size=arguments.n_embd * 4
+        ffn_hidden_size=arguments.n_ffn
     )
     model = ForecastingModel(model_config)
 
@@ -186,7 +170,7 @@ if __name__ == '__main__':
 
     run = wandb.init(
         project=arguments.wandb_project,
-        name=f'l{arguments.n_layers}-h{arguments.n_head}-d{arguments.n_embd}',
+        name=f'l{arguments.n_layers}-h{arguments.n_head}-d{arguments.n_embd}-f{arguments.n_ffn}',
         config={
             "learning_rate": arguments.learning_rate,
             "beta1": arguments.beta1,
@@ -207,7 +191,7 @@ if __name__ == '__main__':
         },
     )
 
-    train_loader, validation_list = setup_data(
+    train_loader, validation_list, tokenizer = setup_data(
         arguments.dataset,
         num_series=arguments.num_series,
         context_length=arguments.block_size,
@@ -222,6 +206,7 @@ if __name__ == '__main__':
     model = train(
         model,
         train_loader,
+        tokenizer,
         arguments.block_size,
         learning_rate=arguments.learning_rate,
         beta1=arguments.beta1,
