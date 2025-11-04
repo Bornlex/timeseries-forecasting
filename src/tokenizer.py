@@ -33,7 +33,7 @@ class ChronosDataset(Dataset):
         series_idx, start_idx = self.window_pointers[idx]
         series = self.data_list[series_idx]['target'][0]
 
-        x_tokens, y_tokens, _ = tokenized_window_from_series(
+        x_tokens, y_tokens, scale = tokenized_window_from_series(
             series,
             start_idx,
             self.context_length,
@@ -46,7 +46,7 @@ class ChronosDataset(Dataset):
         x_tensor = torch.from_numpy(x_tokens).long()
         y_tensor = torch.from_numpy(y_tokens).long()
 
-        return x_tensor, y_tensor
+        return x_tensor, y_tensor, scale
 
 
 def scale_and_quantize(
@@ -83,21 +83,6 @@ def scale_and_quantize(
     return token_ids, scale
 
 
-def find_scaling_limits(scaled_series: np.ndarray, num_bins: int) -> Tuple[float, float]:
-    finite_values = scaled_series[np.isfinite(scaled_series)]
-
-    if finite_values.size == 0:
-        return -1.0, 1.0
-
-    low_limit = np.percentile(finite_values, 1)
-    high_limit = np.percentile(finite_values, 99)
-
-    if low_limit >= high_limit:
-        high_limit = low_limit + 1.0
-
-    return low_limit, high_limit
-
-
 def make_window_pointers(data_list: list, context_length: int) -> List[Tuple[int, int]]:
     pointers = []
 
@@ -119,11 +104,9 @@ def tokenized_window_from_series(
         num_bins: int,
         pad_token_id: int
 ) -> Tuple[np.ndarray, np.ndarray, float]:
-    """
-    Return (x_tokens, y_tokens, scale) as numpy arrays for the window starting at start_idx.
-    """
-    window_end = start_idx + context_length + 1
-    full_window_np = np.array(series[start_idx : window_end]).astype(np.float32)
+    full_window_np = np.array(
+        series[start_idx : start_idx + context_length + 1]
+    ).astype(np.float32)
 
     scale_context_np = full_window_np[:-1]
 
@@ -159,16 +142,10 @@ def setup_data(
         high_limit: float = 1000,
         seed: int = 42
 ):
-    def is_valid_series(item, min_val, max_val):
+    def is_valid_series(item):
         series = np.array(item['target'][0])
 
         if np.any(np.isnan(series)):
-            return False
-
-        if np.any(series < min_val):
-            return False
-
-        if np.any(series > max_val):
             return False
 
         return True
@@ -179,7 +156,7 @@ def setup_data(
         split="train",
         streaming=True,
     ).shuffle(seed=seed).filter(
-        lambda x: is_valid_series(x, min_val=low_limit, max_val=high_limit)
+        lambda x: is_valid_series(x)
     )
 
     data_list = list(raw_dataset.take(num_series))

@@ -43,8 +43,8 @@ def parse_args():
     parser.add_argument('--n_embd', type=int, default=384, help='Embedding dimension (default: n_head * 64).')
     parser.add_argument('--vocab_size', type=int, default=1024, help='Vocabulary size.')
     parser.add_argument('--dropout', type=float, default=0.2, help='Dropout rate.')
-    parser.add_argument('--low_limit', type=float, default=-1000, help='Low limit for scaling.')
-    parser.add_argument('--high_limit', type=float, default=1000, help='High limit for scaling.')
+    parser.add_argument('--low_limit', type=float, default=-15.0, help='Low limit for scaling.')
+    parser.add_argument('--high_limit', type=float, default=15.0, help='High limit for scaling.')
 
     # --- Data & Training ---
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size.')
@@ -112,7 +112,7 @@ def train(
     forecasting_model.train()
 
     for iteration in range(max_iters):
-        x, y = next(iter(dataset))
+        x, y, _ = next(iter(dataset))
         x = x.to(device)
         y = y.to(device, dtype=torch.long)
 

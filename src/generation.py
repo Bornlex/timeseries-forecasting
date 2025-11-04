@@ -56,20 +56,10 @@ def generate_from_series(
         pad_token_id: int,
         max_tokens: int = 256,
         temperature: float = 0.8,
-        top_k: int = 0,
-        top_p: float = 0.9,
+        top_k: int = 50,
+        top_p: float = 1.0,
         log_file: str = 'generation_log.json',
 ) -> List[float]:
-    """
-    Generate new values from an initial `series`.
-
-    - If mode == "fixed_scale": compute scale once from the last `context_length` real values
-      and keep it fixed for all steps (no retokenization).
-    - If mode == "sliding_scale": after each generated value, recompute scale from the
-      newest context (including generated values) and retokenize the context before the next step.
-
-    Returns the original series with `max_tokens` appended decoded values (as floats).
-    """
     model.eval()
 
     token_log = []
@@ -119,8 +109,8 @@ def generate_from_series(
 
             logits[pad_token_id] = float('-inf')
 
-            token_max = int(num_bins * 0.9)
-            logits[token_max:] = float('-inf')
+            # token_max = int(num_bins * 0.9)
+            # logits[token_max:] = float('-inf')
 
             logits_mean = logits.mean().item()
             logits_std = logits.std().item()
