@@ -7,24 +7,6 @@ from typing import List
 from src.tokenizer import Tokenizer
 
 
-def tokens_to_values(
-    token_ids: np.ndarray,
-    low_limit: float,
-    high_limit: float,
-    num_bins: int,
-    scale: float
-) -> np.ndarray:
-    bin_width = (high_limit - low_limit) / float(num_bins)
-    values = np.full(token_ids.shape, np.nan, dtype=np.float32)
-    mask = (token_ids >= 0) & (token_ids < num_bins)
-
-    if np.any(mask):
-        centers = low_limit + (token_ids[mask].astype(np.float32) + 0.5) * bin_width
-        values[mask] = centers * scale
-
-    return values
-
-
 def top_k_top_p_filter(logits: torch.Tensor, top_k: int = 0, top_p: float = 1.0):
     """
     Simple top-k/top-p filtering for logits (in-place filtering).
@@ -53,8 +35,8 @@ def generate_from_series(
         tokenizer: Tokenizer,
         max_tokens: int = 256,
         temperature: float = 0.8,
-        top_k: int = 50,
-        top_p: float = 1.0,
+        top_k: int = 10,
+        top_p: float = 0.9,
         log_file: str = 'generation_log.json',
 ) -> List[float]:
     model.eval()
@@ -67,7 +49,7 @@ def generate_from_series(
         raw = pad + raw
 
     working_values = np.array(raw, dtype=np.float32)
-    context_vals = torch.from_numpy(working_values[-tokenizer.config.context_length:]).long()
+    context_vals = torch.from_numpy(working_values[-tokenizer.config.context_length:]).float()
     context_tokens, current_scale = tokenizer.context_input_transform(context_vals)
     current_token_ids = deepcopy(context_tokens)
 
@@ -110,7 +92,9 @@ def generate_from_series(
 
             current_token_ids = torch.concat([current_token_ids, next_token.cpu()], dim=0)
 
-            pred_value = float(tokenizer.output_transform(current_token_ids, current_scale).cpu().numpy()[0, -1])
+            pred_value = float(tokenizer.output_transform(
+                current_token_ids, current_scale
+            ).cpu().numpy()[0, -1])
 
             token_log.append({
                 'step': step,

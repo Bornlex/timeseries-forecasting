@@ -4,6 +4,7 @@ import os
 import random
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import wandb
 
@@ -94,7 +95,7 @@ def train(
         T_max=lr_decay_iters,
         eta_min=min_lr
     )
-    loss_fn = nn.CrossEntropyLoss(label_smoothing=0.05)
+    loss_fn = nn.CrossEntropyLoss(label_smoothing=1e-3, ignore_index=tokenizer.config.pad_token_id)
 
     forecasting_model.to(device)
     forecasting_model.train()
@@ -107,6 +108,10 @@ def train(
         prediction, _ = forecasting_model(x)
         b, n, c = prediction.shape
 
+        pred_ids = prediction.argmax(dim=-1)  # shape (b, n)
+        mse = F.mse_loss(pred_ids.float(), y.float(), reduction='mean')
+        mae = F.l1_loss(pred_ids.float(), y.float(), reduction='mean')
+
         loss = loss_fn(prediction.view(b * n, c), y.view(b * n))
         optimizer.zero_grad()
         loss.backward()
@@ -115,7 +120,13 @@ def train(
         scheduler.step()
 
         if iteration >= 100:
-            wandb.log({"train/loss": loss.item(), "iteration": iteration, "lr": optimizer.param_groups[0]['lr']})
+            wandb.log({
+                "train/loss": loss.item(),
+                "train/mse": mse.item(),
+                "train/mae": mae.item(),
+                "iteration": iteration,
+                "lr": optimizer.param_groups[0]['lr']
+            })
 
         if iteration % 10 == 0:
             print(f'[{iteration}|{max_iters}] loss : {loss.item():.4f}')
